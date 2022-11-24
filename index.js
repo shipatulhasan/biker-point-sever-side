@@ -19,6 +19,38 @@ const client = new MongoClient(uri, {
   useUnifiedTopology: true,
   serverApi: ServerApiVersion.v1,
 })
+// OpQpWT6AMF98kVVy
+// bikerDb
+
+
+const run = async()=>{
+
+  const usersCollection = client.db('bikerDb').collection("users")
+
+
+  try{
+
+    app.put('/user/:email',async(req,res)=>{
+      const email = req.params.email
+      const user = req.body
+      const filter = {email:email}
+      const options = { upsert: true };
+      const updateDoc = {
+        $set:user
+      }
+      const result = await usersCollection.updateOne(filter, updateDoc, options)
+      res.send(result)
+    })
+
+  }
+  finally{
+
+  }
+
+}
+run().catch(console.dir);
+
+
 
 
 app.get('/', (req, res) => {
