@@ -25,6 +25,7 @@ const run = async()=>{
 
   const usersCollection = client.db('bikerDb').collection("users")
   const categoriesCollection = client.db('bikerDb').collection("categories")
+  const productsCollection = client.db('bikerDb').collection("products")
 
 
   try{
@@ -56,6 +57,23 @@ const run = async()=>{
     // get category
     app.get('/categories',async(req,res)=>{
       const result = await categoriesCollection.find({}).toArray()
+      res.send(result)
+    })
+
+    // products 
+
+    app.post('/product',async(req,res)=>{
+      const proudct = req.body
+      const result = await productsCollection.insertOne(proudct)
+      res.send(result)
+    })
+
+    app.get('/product/:id',async(req,res)=>{
+      const id = req.params.id
+      const query = {_id:ObjectId(id)}
+      const product = await categoriesCollection.findOne(query) 
+      const filter = {category:product.name}
+      const result = await productsCollection.find(filter).toArray()
       res.send(result)
     })
 
