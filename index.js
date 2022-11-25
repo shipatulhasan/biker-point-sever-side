@@ -24,6 +24,7 @@ const client = new MongoClient(uri, {
 const run = async()=>{
 
   const usersCollection = client.db('bikerDb').collection("users")
+  const categoriesCollection = client.db('bikerDb').collection("categories")
 
 
   try{
@@ -50,6 +51,14 @@ const run = async()=>{
       const result = await usersCollection.findOne(filter)
       res.send(result)
     })
+
+
+    // get category
+    app.get('/categories',async(req,res)=>{
+      const result = await categoriesCollection.find({}).toArray()
+      res.send(result)
+    })
+
 
 
   }
