@@ -68,12 +68,28 @@ const run = async()=>{
       res.send(result)
     })
 
-    app.get('/product/:id',async(req,res)=>{
+    // categories product
+    app.get('/category/:id',async(req,res)=>{
       const id = req.params.id
       const query = {_id:ObjectId(id)}
       const product = await categoriesCollection.findOne(query) 
       const filter = {category:product.name}
       const result = await productsCollection.find(filter).toArray()
+      res.send(result)
+    })
+
+    // seller's products
+    app.get('/product',async(req,res)=>{
+      const email = req.query.email
+      const filter = {'seller.email':email}
+      const result = await productsCollection.find(filter).toArray()
+      res.send(result)
+    })
+    // seller's delete product
+    app.delete('/product/:id',async(req,res)=>{
+      const id = req.params.id
+      const filter = {_id:ObjectId(id)}
+      const result = await productsCollection.deleteOne(filter)
       res.send(result)
     })
 
