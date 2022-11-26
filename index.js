@@ -78,6 +78,8 @@ const run = async()=>{
       res.send(result)
     })
 
+    // seller routes
+
     // seller's products
     app.get('/product',async(req,res)=>{
       const email = req.query.email
@@ -90,6 +92,24 @@ const run = async()=>{
       const id = req.params.id
       const filter = {_id:ObjectId(id)}
       const result = await productsCollection.deleteOne(filter)
+      res.send(result)
+    })
+
+
+
+    // admin routes
+
+    app.get('/user',async(req,res)=>{
+      const role = req.query.role
+      const filter = {role:role}
+      const result = await usersCollection.find(filter).toArray()
+      res.send(result)
+    })
+
+    app.delete('/user/:id',async(req,res)=>{
+      const id = req.params.id
+      const filter = {_id:ObjectId(id)}
+      const result = await usersCollection.deleteOne(filter)
       res.send(result)
     })
 
