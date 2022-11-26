@@ -34,6 +34,7 @@ const run = async()=>{
     // user api
     app.put('/user/:email',async(req,res)=>{
       const email = req.params.email
+      console.log(email)
       const user = req.body
       const filter = {email:email}
       const options = { upsert: true };
@@ -42,6 +43,16 @@ const run = async()=>{
       }
       const result = await usersCollection.updateOne(filter, updateDoc, options)
       const token = jwt.sign(user,process.env.ACCESS_TOKEN,{expiresIn:'1d'})
+    
+      if(user?.verified){
+        const query = {'seller.email':email}
+        // const update = { upsert: true };
+        const update = {
+          $set:{'seller.verified':true}
+        }
+   
+        const updateVerification = await productsCollection.updateOne(query,update)
+      }
       res.send({result,token})
     })
 
@@ -109,6 +120,9 @@ const run = async()=>{
     app.delete('/user/:id',async(req,res)=>{
       const id = req.params.id
       const filter = {_id:ObjectId(id)}
+      const user = await usersCollection.findOne(filter)
+      const query = {'seller.email':user.email}
+      const deleteproducts = await productsCollection.deleteMany(query)
       const result = await usersCollection.deleteOne(filter)
       res.send(result)
     })
