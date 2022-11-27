@@ -21,6 +21,23 @@ const client = new MongoClient(uri, {
 })
 
 
+
+const verifyJWT = (req,res,next)=>{
+  const auth = req.headers.authorization
+  if(!auth){
+    return res.status(401).send({message:'Unauthorized access'})
+  }
+  const token = auth.split(' ')[1]
+  jwt.verify(token, process.env.ACCESS_TOKEN, function(err, decoded) {
+    if(err){
+     return res.status(403).send({message:'forbidden'})
+    }
+    req.decoded = decoded
+    next()
+  });
+}
+
+
 const run = async()=>{
 
   const usersCollection = client.db('bikerDb').collection("users")
@@ -30,6 +47,28 @@ const run = async()=>{
 
 
   try{
+
+    // verification 
+
+    const verifyAdmin= async(req,res,next)=>{
+      const decodedEmail = req.decoded.email
+      console.log(decodedEmail)
+      const query = {email:decodedEmail}
+      const user = await usersCollection.findOne(query)
+      if(user?.role!== 'admin'){
+        return res.status(401).send({message:'unauthorized access'})
+      }
+      next()
+    }
+    const verifySeller= async(req,res,next)=>{
+      const decodedEmail = req.decoded.email
+      const query = {email:decodedEmail}
+      const user = await usersCollection.findOne(query)
+      if(user?.role!== 'seller'){
+        return res.status(401).send({message:'unauthorized access'})
+      }
+      next()
+    }
 
 
     // user api
@@ -54,13 +93,30 @@ const run = async()=>{
         console.log(updateVerification)
 
       }
+      res.send(result)
+    })
+
+
+    // get token
+
+    app.get('/jwt',async(req,res)=>{
+      const email = req.query.email
+      const query = {email:email}
+      const user = await usersCollection.findOne(query)
+      if(!user){
+        return res.status(401).send({token:''})
+      }
       const token = jwt.sign(user,process.env.ACCESS_TOKEN,{expiresIn:'1d'})
-      res.send({result,token})
+      res.send({token})
     })
 
     // get users for role
-    app.get('/user/:email',async(req,res)=>{
+    app.get('/user/:email',verifyJWT,async(req,res)=>{
+      const decodedEmail = req.decoded.email
       const email = req.params.email
+      if(email!==decodedEmail){
+        return res.status(403).send({message:'forbidden'})
+      }
       const filter = {email:email}
       const result = await usersCollection.findOne(filter)
       res.send(result)
@@ -75,7 +131,7 @@ const run = async()=>{
 
     // products 
 
-    app.post('/product',async(req,res)=>{
+    app.post('/product',verifyJWT,verifySeller,async(req,res)=>{
       const proudct = req.body
       const result = await productsCollection.insertOne(proudct)
       res.send(result)
@@ -96,16 +152,34 @@ const run = async()=>{
 
     // booking
 
-    app.post('/booking',async(req,res)=>{
+    app.post('/booking',verifyJWT,async(req,res)=>{
       const bookingInfo = req.body
       const result = await bookingsCollection.insertOne(bookingInfo)
       res.send(result)
     })
 
-    app.get('/booking',async(req,res)=>{
+    app.get('/booking',verifyJWT,async(req,res)=>{
       const email = req.query.email
+
+      const decodedEmail = req.decoded.email
+     
+      if(email!==decodedEmail){
+        return res.status(403).send({message:'forbidden'})
+      }
+      
       const query = {email:email}
+
       const result = await bookingsCollection.find(query).toArray()
+    
+      res.send(result)
+    })
+
+    // delete booking
+
+    app.delete('/booking/:id',async(req,res)=>{
+      const id = req.params.id
+      const filter = {_id:ObjectId(id)}
+      const result = await bookingsCollection.deleteOne(filter)
       res.send(result)
     })
 
@@ -116,7 +190,7 @@ const run = async()=>{
     // seller routes
 
     // seller's products
-    app.get('/product',async(req,res)=>{
+    app.get('/product',verifyJWT,verifySeller,async(req,res)=>{
       const email = req.query.email
       const reported = req.query.reported
       let filter = {}
@@ -140,7 +214,7 @@ const run = async()=>{
     
     // reported product admin route
 
-    app.put('/product/:id',async(req,res)=>{
+    app.put('/product/:id',verifyJWT,verifyAdmin,async(req,res)=>{
       const id = req.params.id
       const product = req.body
       const filter = {_id:ObjectId(id)}
@@ -161,7 +235,7 @@ const run = async()=>{
 
     // to show all users an buyers
 
-    app.get('/user',async(req,res)=>{
+    app.get('/user',verifyJWT,verifyAdmin,async(req,res)=>{
       const role = req.query.role
       const filter = {role:role}
       const result = await usersCollection.find(filter).toArray()
