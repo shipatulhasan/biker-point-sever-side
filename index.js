@@ -26,6 +26,7 @@ const run = async()=>{
   const usersCollection = client.db('bikerDb').collection("users")
   const categoriesCollection = client.db('bikerDb').collection("categories")
   const productsCollection = client.db('bikerDb').collection("products")
+  const bookingsCollection = client.db('bikerDb').collection("bookings")
 
 
   try{
@@ -34,7 +35,7 @@ const run = async()=>{
     // user api
     app.put('/user/:email',async(req,res)=>{
       const email = req.params.email
-      console.log(email)
+  
       const user = req.body
       const filter = {email:email}
       const options = { upsert: true };
@@ -42,21 +43,22 @@ const run = async()=>{
         $set:user
       }
       const result = await usersCollection.updateOne(filter, updateDoc, options)
-      const token = jwt.sign(user,process.env.ACCESS_TOKEN,{expiresIn:'1d'})
-    
       if(user?.verified){
         const query = {'seller.email':email}
-        // const update = { upsert: true };
+
         const update = {
           $set:{'seller.verified':true}
         }
-   
-        const updateVerification = await productsCollection.updateOne(query,update)
+        
+        const updateVerification = await productsCollection.updateMany(query,update)
+        console.log(updateVerification)
+
       }
+      const token = jwt.sign(user,process.env.ACCESS_TOKEN,{expiresIn:'1d'})
       res.send({result,token})
     })
 
-    // get users
+    // get users for role
     app.get('/user/:email',async(req,res)=>{
       const email = req.params.email
       const filter = {email:email}
@@ -83,18 +85,47 @@ const run = async()=>{
     app.get('/category/:id',async(req,res)=>{
       const id = req.params.id
       const query = {_id:ObjectId(id)}
-      const product = await categoriesCollection.findOne(query) 
-      const filter = {category:product.name}
+      const category = await categoriesCollection.findOne(query) 
+      const filter = {category:category.name}
       const result = await productsCollection.find(filter).toArray()
       res.send(result)
     })
+
+
+    // users route
+
+    // booking
+
+    app.post('/booking',async(req,res)=>{
+      const bookingInfo = req.body
+      const result = await bookingsCollection.insertOne(bookingInfo)
+      res.send(result)
+    })
+
+    app.get('/booking',async(req,res)=>{
+      const email = req.query.email
+      const query = {email:email}
+      const result = await bookingsCollection.find(query).toArray()
+      res.send(result)
+    })
+
+
+
+
 
     // seller routes
 
     // seller's products
     app.get('/product',async(req,res)=>{
       const email = req.query.email
-      const filter = {'seller.email':email}
+      const reported = req.query.reported
+      let filter = {}
+      if(email){
+        filter = {'seller.email':email}
+      }
+      if(reported){
+        filter = {reported:reported}
+      }
       const result = await productsCollection.find(filter).toArray()
       res.send(result)
     })
@@ -106,9 +137,29 @@ const run = async()=>{
       res.send(result)
     })
 
+    
+    // reported product admin route
+
+    app.put('/product/:id',async(req,res)=>{
+      const id = req.params.id
+      const product = req.body
+      const filter = {_id:ObjectId(id)}
+      const options = {upsert:true}
+      const updatedDoc = {
+        $set:{
+          reported:true
+        }
+      }
+      const updateProduct = await productsCollection.updateOne(filter,updatedDoc,options)
+
+      res.send(updateProduct)
+    })
+
 
 
     // admin routes
+
+    // to show all users an buyers
 
     app.get('/user',async(req,res)=>{
       const role = req.query.role
@@ -126,6 +177,8 @@ const run = async()=>{
       const result = await usersCollection.deleteOne(filter)
       res.send(result)
     })
+
+
 
 
 
