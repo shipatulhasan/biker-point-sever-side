@@ -4,6 +4,8 @@ const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb')
 require('dotenv').config()
 const jwt = require('jsonwebtoken')
 
+const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY)
+
 const app = express()
 const port = process.env.PORT || 5000
 
@@ -44,6 +46,8 @@ const run = async()=>{
   const categoriesCollection = client.db('bikerDb').collection("categories")
   const productsCollection = client.db('bikerDb').collection("products")
   const bookingsCollection = client.db('bikerDb').collection("bookings")
+  const advertiseCollection = client.db('bikerDb').collection("addvertise")
+  const paymentsCollection = client.db('bikerDb').collection("payments")
 
 
   try{
@@ -52,10 +56,9 @@ const run = async()=>{
 
     const verifyAdmin= async(req,res,next)=>{
       const decodedEmail = req.decoded.email
-      console.log(decodedEmail)
       const query = {email:decodedEmail}
       const user = await usersCollection.findOne(query)
-      if(user?.role!== 'admin'){
+      if(user?.role!=='admin'){
         return res.status(401).send({message:'unauthorized access'})
       }
       next()
@@ -64,11 +67,59 @@ const run = async()=>{
       const decodedEmail = req.decoded.email
       const query = {email:decodedEmail}
       const user = await usersCollection.findOne(query)
-      if(user?.role!== 'seller'){
+      if(user?.role!=='seller'){
         return res.status(401).send({message:'unauthorized access'})
       }
       next()
     }
+
+    // payment 
+
+
+    app.post("/create-payment-intent", async (req, res) =>{
+
+      const booking = req.body
+      const price = booking.price
+      const amount = price * 100
+      const paymentIntent = await stripe.paymentIntents.create({
+          currency:'usd',
+          amount :amount,
+          payment_method_types: [
+              "card"
+            ],
+      })
+      res.send({
+          clientSecret: paymentIntent.client_secret,
+        })
+  })
+
+  // store payments in database
+
+  app.post('/payments',verifyJWT,async(req,res)=>{
+    const payment = req.body
+    const result = await paymentsCollection.insertOne(payment)
+    const query = {productId:payment.productId}
+    const adDelete = await advertiseCollection.deleteOne(query)
+    const filter = {_id:ObjectId(payment.productId)}
+    const updatedProductDoc = {
+      $set:{
+        paid:true
+      }
+    }
+    const updateProduct = await productsCollection.updateOne(filter,updatedProductDoc)
+    const bookingfilter = {_id:ObjectId(payment.bookingId)}
+    const updatedBookingDoc = {
+      $set:{
+        paid:true,
+        transactionId:payment.transactionID
+      }
+    }
+    const updateBooking = await bookingsCollection.updateOne(bookingfilter,updatedProductDoc)
+
+    res.send(result)
+
+  })
+
 
 
     // user api
@@ -90,7 +141,6 @@ const run = async()=>{
         }
         
         const updateVerification = await productsCollection.updateMany(query,update)
-        console.log(updateVerification)
 
       }
       res.send(result)
@@ -122,30 +172,42 @@ const run = async()=>{
       res.send(result)
     })
 
+    // open routes
+
 
     // get category
+
     app.get('/categories',async(req,res)=>{
       const result = await categoriesCollection.find({}).toArray()
       res.send(result)
     })
 
-    // products 
+    // products advertise
 
-    app.post('/product',verifyJWT,verifySeller,async(req,res)=>{
-      const proudct = req.body
-      const result = await productsCollection.insertOne(proudct)
+  
+    app.get('/advertise',async(req,res)=>{
+      
+      const result = await advertiseCollection.find({}).sort({_id:-1}).toArray()
       res.send(result)
     })
 
     // categories product
+
     app.get('/category/:id',async(req,res)=>{
       const id = req.params.id
       const query = {_id:ObjectId(id)}
       const category = await categoriesCollection.findOne(query) 
       const filter = {category:category.name}
       const result = await productsCollection.find(filter).toArray()
-      res.send(result)
+      let remaining
+      result.forEach(product=>{
+        const unsold = result.filter(p=>p.paid === product.paid)
+        remaining = unsold
+      })
+      res.send(remaining)
     })
+
+    // open routes close
 
 
     // users route
@@ -154,6 +216,13 @@ const run = async()=>{
 
     app.post('/booking',verifyJWT,async(req,res)=>{
       const bookingInfo = req.body
+
+      const filter = {email:bookingInfo.email}
+      const alreadyBooked = await bookingsCollection.find(filter).toArray()
+      if(alreadyBooked.length){
+        const message = 'you have already booked this product'
+        return res.send({acknowledged: false, message})
+      }
       const result = await bookingsCollection.insertOne(bookingInfo)
       res.send(result)
     })
@@ -173,10 +242,19 @@ const run = async()=>{
     
       res.send(result)
     })
+    app.get('/booking/:id',async(req,res)=>{
+      const id = req.params.id
+      
+      const query = {_id:ObjectId(id)}
+
+      const result = await bookingsCollection.findOne(query)
+    
+      res.send(result)
+    })
 
     // delete booking
 
-    app.delete('/booking/:id',async(req,res)=>{
+    app.delete('/booking/:id',verifyJWT,async(req,res)=>{
       const id = req.params.id
       const filter = {_id:ObjectId(id)}
       const result = await bookingsCollection.deleteOne(filter)
@@ -184,37 +262,50 @@ const run = async()=>{
     })
 
 
-
-
-
     // seller routes
 
     // seller's products
     app.get('/product',verifyJWT,verifySeller,async(req,res)=>{
       const email = req.query.email
-      const reported = req.query.reported
-      let filter = {}
-      if(email){
-        filter = {'seller.email':email}
-      }
-      if(reported){
-        filter = {reported:reported}
-      }
+      const filter = {'seller.email':email}
       const result = await productsCollection.find(filter).toArray()
       res.send(result)
     })
     // seller's delete product
-    app.delete('/product/:id',async(req,res)=>{
+    app.delete('/product/:id',verifyJWT,verifySeller,async(req,res)=>{
       const id = req.params.id
       const filter = {_id:ObjectId(id)}
       const result = await productsCollection.deleteOne(filter)
       res.send(result)
     })
 
+    app.post('/product',verifyJWT,verifySeller,async(req,res)=>{
+      const proudct = req.body
+      const result = await productsCollection.insertOne(proudct)
+      res.send(result)
+    })
+
+
+    // seller advertise product
+
+    app.post('/advertise',verifyJWT,verifySeller,async(req,res)=>{
+      const adproduct = req.body
+      const filter = {_id:ObjectId(adproduct.productId)}
+      const updateDoc = {
+        $set:{
+          advertise:true
+        }
+      }
+      const updateProduct = await productsCollection.updateOne(filter,updateDoc)
+      const result = await advertiseCollection.insertOne(adproduct)
+      res.send(result)
+    })
+ 
+
     
     // reported product admin route
 
-    app.put('/product/:id',verifyJWT,verifyAdmin,async(req,res)=>{
+    app.put('/product/:id',verifyJWT,async(req,res)=>{
       const id = req.params.id
       const product = req.body
       const filter = {_id:ObjectId(id)}
@@ -242,13 +333,39 @@ const run = async()=>{
       res.send(result)
     })
 
-    app.delete('/user/:id',async(req,res)=>{
+    app.delete('/user/:id',verifyJWT,verifyAdmin,async(req,res)=>{
       const id = req.params.id
       const filter = {_id:ObjectId(id)}
       const user = await usersCollection.findOne(filter)
       const query = {'seller.email':user.email}
       const deleteproducts = await productsCollection.deleteMany(query)
       const result = await usersCollection.deleteOne(filter)
+      res.send(result)
+    })
+
+    // reported product
+    app.get('/reported-product',async(req,res)=>{
+      
+      const filter = {}
+      
+      const result = await productsCollection.find(filter).toArray()
+      let reportedProduct
+      result.forEach(product=>{
+        const reported = result.filter(p=>p.reported!==product.reported)
+        reportedProduct = reported
+
+      })
+      res.send(reportedProduct)
+    })
+
+    // delete reported product
+    app.delete('/reported-product/:id',async(req,res)=>{
+
+      const id = req.params.id
+      const filter = {_id:ObjectId(id)}
+      const result = await productsCollection.deleteOne(filter)
+      const query = {productId:id}
+      const deletAdd = await advertiseCollection.deleteOne(query)
       res.send(result)
     })
 
