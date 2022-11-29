@@ -103,7 +103,8 @@ const run = async()=>{
     const filter = {_id:ObjectId(payment.productId)}
     const updatedProductDoc = {
       $set:{
-        paid:true
+        status:'sold',
+        advertise:false
       }
     }
     const updateProduct = await productsCollection.updateOne(filter,updatedProductDoc)
@@ -114,7 +115,7 @@ const run = async()=>{
         transactionId:payment.transactionID
       }
     }
-    const updateBooking = await bookingsCollection.updateOne(bookingfilter,updatedProductDoc)
+    const updateBooking = await bookingsCollection.updateOne(bookingfilter,updatedBookingDoc)
 
     res.send(result)
 
@@ -197,14 +198,10 @@ const run = async()=>{
       const id = req.params.id
       const query = {_id:ObjectId(id)}
       const category = await categoriesCollection.findOne(query) 
-      const filter = {category:category.name}
-      const result = await productsCollection.find(filter).toArray()
-      let remaining
-      result.forEach(product=>{
-        const unsold = result.filter(p=>p.paid === product.paid)
-        remaining = unsold
-      })
-      res.send(remaining)
+      const filter = {category:category?.name,status:'available'}
+      const product = await productsCollection.find(filter).toArray()
+      res.send(product)
+
     })
 
     // open routes close
@@ -217,7 +214,7 @@ const run = async()=>{
     app.post('/booking',verifyJWT,async(req,res)=>{
       const bookingInfo = req.body
 
-      const filter = {email:bookingInfo.email}
+      const filter = {email:bookingInfo.email,productId:bookingInfo.productId}
       const alreadyBooked = await bookingsCollection.find(filter).toArray()
       if(alreadyBooked.length){
         const message = 'you have already booked this product'
@@ -344,7 +341,7 @@ const run = async()=>{
     })
 
     // reported product
-    app.get('/reported-product',async(req,res)=>{
+    app.get('/reported-product',verifyJWT,verifyAdmin,async(req,res)=>{
       
       const filter = {}
       
@@ -359,7 +356,7 @@ const run = async()=>{
     })
 
     // delete reported product
-    app.delete('/reported-product/:id',async(req,res)=>{
+    app.delete('/reported-product/:id',verifyJWT,verifyAdmin,async(req,res)=>{
 
       const id = req.params.id
       const filter = {_id:ObjectId(id)}
